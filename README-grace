@@ -1,0 +1,107 @@
+[2012-08-01]
+
+If I am very lucky I will be able to develop and build on Compiler and
+the libraries will just work on the Grace OSSs. The versions of CentOS
+are off by one, and the kerenels differe by build numbers, but are
+otherwise the same. The architectures are the same. There's hope.
+
+I'll do all the development in the 'rpc-stats' branch rather than in
+the main code-base.
+
+git branch rpc-stats
+git checkout rpc-stats
+[or equiv. the one command git checkout -b rpc-stats]
+and 
+git checkout master
+to go back and
+git merge rpc-stats
+git branch -d rpc-stats
+to pull in the changes and delete the branch.
+
+In order to have a new module I'll need to register the new module
+with the build system. In the directory
+
+  cerebro/metric
+
+the Makefile.am lists the modules that will be built. So copying the
+lines:
+
+modulelib_LTLIBRARIES = \
+	cerebro_metric_lmt_ost.la \
+
+and
+
+cerebro_metric_lmt_ost_la_SOURCES = ost.c
+cerebro_metric_lmt_ost_la_LDFLAGS = $(module_ldflags)
+cerebro_metric_lmt_ost_la_LIBADD = $(common_libadd)
+
+and using the new name cerebro_metric_lmt_rpc.la may be enough to get
+things going. It will have a dependence on rpc.c. If I need support
+code from other files I may need to update them as well. If I can make
+the changes entirely stand-alone, that might be a good thing for a
+start. 
+
+[2012-08-02]
+
+I may want to add the rpc metric option to the lmtmetric.c utility as
+well as the libraries.
+
+By analogy with the lmt_ost metric I want the lmt_rpc metric to build
+on calls to liblmt, which means there needs to be an rpc.c and rpc.h
+in the liblmt directory and the Makefile.am there needs these
+modifications:
+
+liblmt_la_SOURCES = \
+        ost.c \
+        ost.h \
+        rpc.c \
+        rpc.h \
+...
+
+The entire diff for ost.c to rpc.c in the cerebro/metric is:
+
+---------------------------------------------------------------------
+<  *  Copyright (C) 2007-2010 Lawrence Livermore National Security,
+LLC.
+<  *  This module (re)written by Jim Garlick <garlick@llnl.gov>.
+<  *  UCRL-CODE-232438
+---
+>  *  Copyright (C) 2012 University of California Regents
+>  *  This module written by Andrew Uselton <acuselton@lbl.gov>
+>  *  UCRL-CODE-xxxxxx
+8c8,9
+<  *  Authors: H. Wartens, P. Spencer, N. O'Neill, J. Long, J. Garlick
+---
+>  *  Authors: H. Wartens, P. Spencer, N. O'Neill, J. Long,
+J. Garlick,
+>  *  A. Uselton
+9a11,12
+>  *  Until the pull request is completed this module resides in the
+fork:
+>  *  http://github.com/uselton/lmt
+48c51
+< #include "ost.h"
+---
+> #include "rpc.h"
+52c55
+< #define METRIC_NAME         "lmt_ost"
+---
+> #define METRIC_NAME         "lmt_rpc"
+73c76
+<     if (lmt_ost_string_v2 (ctx, buf, CEREBRO_MAX_DATA_STRING_LEN) <
+0)
+---
+>     if (lmt_rpc_string (ctx, buf, CEREBRO_MAX_DATA_STRING_LEN) < 0)
+---------------------------------------------------------------------
+
+all the really interesting new code will be in liblmt/rpc.c and
+rpc.h. 
+
+Call path:
+cerebro/metric/rpc.c:_get_metric_value()
+  liblmt/rpc.c:lmt_rpc_string()
+    liblmt/rpc.c:_get_rpcstring()
+      libproc/lustre.c:proc_lustre_hashbrw_stats()
+        libproc/lustre.c:_hash_brw_stats()
+          libproc/lustre.c:_parse_brw_stat()
+            libproc/lustre.c:_parse_stat()
