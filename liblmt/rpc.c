@@ -87,7 +87,7 @@ char *brw_enum_strings[8] = {
 static int
 _parse_brw_stat(pctx_t ctx, char *name, brw_t t, char *s, int len)
 {
-  histogram_t brw_stats_hist = NULL;
+  histogram_t *brw_stats_hist = NULL;
   char buf[MAX_BRW_STAT_LEN];
   int i, n;
 
@@ -101,10 +101,11 @@ _parse_brw_stat(pctx_t ctx, char *name, brw_t t, char *s, int len)
    * the histogram. 
    */
   n = snprintf( buf, MAX_BRW_STAT_LEN, "%s:{", brw_enum_strings[t] );
-  for (i = 0; i < h->bincount - 1; i++)
+  for (i = 0; i < brw_stats_hist->bincount - 1; i++)
     {
       n+= snprintf( buf+n, MAX_BRW_STAT_LEN - n, "%"PRIu64":{%"PRIu64",%"PRIu64"},",
-		    h->bin[i].x, h->bin[i].yr, h->bin[i].yw);
+		    brw_stats_hist->bin[i].x, brw_stats_hist->bin[i].yr, 
+		    brw_stats_hist->bin[i].yw);
       if (n >= MAX_BRW_STAT_LEN) {
 	if (lmt_conf_get_proto_debug ())
 	  msg ("string overflow");
@@ -112,9 +113,10 @@ _parse_brw_stat(pctx_t ctx, char *name, brw_t t, char *s, int len)
       }
     }
   /* The last one has a closing brace rather than a comma */  
-  i = h->bincount - 1;
+  i = brw_stats_hist->bincount - 1;
   n+= snprintf( buf+n, MAX_BRW_STAT_LEN - n, "%"PRIu64":{%"PRIu64",%"PRIu64"}}",
-		h->bin[i].x, h->bin[i].yr, h->bin[i].yw);
+		brw_stats_hist->bin[i].x, brw_stats_hist->bin[i].yr, 
+		brw_stats_hist->bin[i].yw);
   if (n >= MAX_BRW_STAT_LEN) {
     if (lmt_conf_get_proto_debug ())
       msg ("string overflow");
@@ -128,8 +130,8 @@ _parse_brw_stat(pctx_t ctx, char *name, brw_t t, char *s, int len)
     return -1;
     }
   if(brw_stats_hist != NULL)
-    histogram_destory(brw_stats_hist);
-  retrun 0;
+    histogram_destroy(brw_stats_hist);
+  return 0;
 }
 
 static int
@@ -143,7 +145,7 @@ _get_rpcstring (pctx_t ctx, char *name, char *s, int len)
             err ("error reading lustre %s uuid from proc", name);
         goto done;
     }
-    n = sprintf( s, len, "%s;", uuid );
+    n = snprintf( s, len, "%s;", uuid );
     if (n >= len) {
         if (lmt_conf_get_proto_debug ())
             msg ("string overflow");
@@ -151,7 +153,7 @@ _get_rpcstring (pctx_t ctx, char *name, char *s, int len)
     }
     s += n; len -= n;
     /* Sequence through the various brw_stats histograms */
-    brt_t t = BRW_RPC;
+    brw_t t = BRW_RPC;
     while( brw_enum_strings[t] != NULL )
       {
 	if( (n = _parse_brw_stat(ctx, name, t, s, len)) < 0 )
@@ -266,12 +268,19 @@ lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, uint64_t *tbdp)
         goto done;
     }
     *ostnamep = ostname;
+    *tbdp = rpc_hist;
     /* Now that I have it, what do I do with it? */
     retval = 0;
 done:
     if (retval < 0) {
         free (ostname);
-        free (recov_status);
+        free (rpc_hist);
+        free (dispages_hist);
+        free (disblocks_hist);
+        free (frag_hist);
+        free (flight_hist);
+        free (iotime_hist);
+        free (iosize_hist);
     }
     return retval;
 }
