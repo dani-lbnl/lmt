@@ -57,23 +57,70 @@
 
 #define MAX_BRW_STAT_LEN 1500
 
+/* I don't actually use these, but I keep them here for reference */
+char *brw_stats_keys[8] = {
+  "pages per bulk r/w", /* BRW_RPC */
+  "discontiguous pages", /* BRW_DISPAGES */
+  "discontiguous blocks", /* BRW_DISBLOCKS */
+  "disk fragmented I/Os", /* BRW_FRAG */
+  "disk I/Os in flight", /* BRW_FLIGHT */
+  "I/O time (1/1000s)", /* BRW_IOTIME */
+  "disk I/O size", /* BRW_IOSIZE */
+  NULL
+};
+
+/* I use these shorter strings, since they have no embedded blanks */
+/* They correspond directly to the brw_t enum */
+char *brw_enum_strings[8] = {
+  "BRW_RPC",
+  "BRW_DISPAGES",
+  "BRW_DISBLOCKS",
+  "BRW_FRAG",
+  "BRW_FLIGHT",
+  "BRW_IOTIME",
+  "BRW_IOSIZE",
+  NULL
+};
+
+
+
 static int
 _parse_brw_stat(pctx_t ctx, char *name, brw_t t, char *s, int len)
 {
-  int ret = -1;
   histogram_t brw_stats_hist = NULL;
   char buf[MAX_BRW_STAT_LEN];
-  
+  int i, n;
+
   if (proc_lustre_brwstats (ctx, name, t, &brw_stats_hist) < 0) {
     if (lmt_conf_get_proto_debug ())
       err ("error reading lustre brw_stats entry %d from %s proc", (int)t, name);
-    goto done;
+    return -1;
   }
   /*
    * At this point you want to construct a text representation of
    * the histogram. 
    */
-  
+  n = snprintf( buf, MAX_BRW_STAT_LEN, "%s:{", brw_enum_strings[t] );
+  for (i = 0; i < h->bincount - 1; i++)
+    {
+      n+= snprintf( buf+n, MAX_BRW_STAT_LEN - n, "%"PRIu64":{%"PRIu64",%"PRIu64"},",
+		    h->bin[i].x, h->bin[i].yr, h->bin[i].yw);
+      if (n >= MAX_BRW_STAT_LEN) {
+	if (lmt_conf_get_proto_debug ())
+	  msg ("string overflow");
+	return -1;
+      }
+    }
+  /* The last one has a closing brace rather than a comma */  
+  i = h->bincount - 1;
+  n+= snprintf( buf+n, MAX_BRW_STAT_LEN - n, "%"PRIu64":{%"PRIu64",%"PRIu64"}}",
+		h->bin[i].x, h->bin[i].yr, h->bin[i].yw);
+  if (n >= MAX_BRW_STAT_LEN) {
+    if (lmt_conf_get_proto_debug ())
+      msg ("string overflow");
+    return -1;
+  }
+  /* Now put the entire thing in the provided cerebro message buffer */
   n = snprintf (s, len, "%s;", buf);
   if (n >= len) {
     if (lmt_conf_get_proto_debug ())
@@ -82,9 +129,7 @@ _parse_brw_stat(pctx_t ctx, char *name, brw_t t, char *s, int len)
     }
   if(brw_stats_hist != NULL)
     histogram_destory(brw_stats_hist);
-  ret = 0;
- done:
-  retrun ret;
+  retrun 0;
 }
 
 static int
@@ -102,29 +147,18 @@ _get_rpcstring (pctx_t ctx, char *name, char *s, int len)
     if (n >= len) {
         if (lmt_conf_get_proto_debug ())
             msg ("string overflow");
-        return -1;
+        goto done;
     }
     s += n; len -= n;
-    if( (n = _parse_brw_stat(ctx, name, BRW_RPC, s, len)) < 0 )
-      goto done;
-    s += n; len -= n;
-    if( (n = _parse_brw_stat(ctx, name, BRW_DISPAGES, s, len)) < 0 )
-      goto done;
-    s += n; len -= n;
-    if( (n = _parse_brw_stat(ctx, name, BRW_DISBLOCKS, s, len)) < 0 )
-      goto done;
-    s += n; len -= n;
-    if( (n = _parse_brw_stat(ctx, name, BRW_FRAG, s, len)) < 0 )
-      goto done;
-    s += n; len -= n;
-    if( (n = _parse_brw_stat(ctx, name, BRW_FLIGHT, s, len)) < 0 )
-      goto done;
-    s += n; len -= n;
-    if( (n = _parse_brw_stat(ctx, name, BRW_IOTIME, s, len)) < 0 )
-      goto done;
-    s += n; len -= n;
-    if( (n = _parse_brw_stat(ctx, name, BRW_IOSIZE, s, len)) < 0 )
-      goto done;
+    /* Sequence through the various brw_stats histograms */
+    brt_t t = BRW_RPC;
+    while( brw_enum_strings[t] != NULL )
+      {
+	if( (n = _parse_brw_stat(ctx, name, t, s, len)) < 0 )
+	  goto done;
+	s += n; len -= n;
+	t++;
+      }
     retval = 0;
 done:
     if (uuid)
@@ -173,6 +207,74 @@ done:
     return retval;
 }
 
+int
+lmt_rpc_decode (const char *s, char **ossnamep, float *tbdp, List *ostinfop)
+{
+    int retval = -1;
+    char *ossname =  xmalloc (strlen(s) + 1);
+    char *cpy = NULL;
+    List ostinfo = list_create ((ListDelF)free);
+
+    if (sscanf (s, "%[^;];", ossname) != 1) {
+        if (lmt_conf_get_proto_debug ())
+            msg ("lmt_rpc: parse error: oss name");
+        goto done;
+    }
+    if (!(s = strskip (s, 1, ';'))) {
+        if (lmt_conf_get_proto_debug ())
+            msg ("lmt_rpc: parse error: skipping oss name");
+        goto done;
+    }
+    /* Get the name and seven brw_stats histograms */
+    while ((cpy = strskipcpy (&s, 8, ';')))
+        list_append (ostinfo, cpy);
+    if (strlen (s) > 0) {
+        if (lmt_conf_get_proto_debug ())
+            msg ("lmt_rpc: parse error: string not exhausted");
+        goto done;
+    }
+    *ossnamep = ossname;
+    *ostinfop = ostinfo;
+    retval = 0;
+done:
+    if (retval < 0) {
+        free (ossname);
+        list_destroy (ostinfo);
+    }
+    return retval;
+}
+
+int
+lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, uint64_t *tbdp)
+{
+    int retval = -1;
+    char *ostname = xmalloc (strlen (s) + 1);;
+    char *rpc_hist = xmalloc (strlen (s) + 1);;
+    char *dispages_hist = xmalloc (strlen (s) + 1);;
+    char *disblocks_hist = xmalloc (strlen (s) + 1);;
+    char *frag_hist = xmalloc (strlen (s) + 1);;
+    char *flight_hist = xmalloc (strlen (s) + 1);;
+    char *iotime_hist = xmalloc (strlen (s) + 1);;
+    char *iosize_hist = xmalloc (strlen (s) + 1);;
+    uint64_t tbd;
+
+    if (sscanf( s, "%[^;];{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};",
+                ostname, rpc_hist, dispages_hist, disblocks_hist, 
+		frag_hist, flight_hist, iotime_hist, iosize_hist) != 8) {
+        if (lmt_conf_get_proto_debug ())
+            msg ("lmt_rpc: parse error: rpc ostinfo");
+        goto done;
+    }
+    *ostnamep = ostname;
+    /* Now that I have it, what do I do with it? */
+    retval = 0;
+done:
+    if (retval < 0) {
+        free (ostname);
+        free (recov_status);
+    }
+    return retval;
+}
 
 /*
  * vi:tabstop=4 shiftwidth=4 expandtab
