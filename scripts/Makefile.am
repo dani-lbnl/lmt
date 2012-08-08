@@ -14,7 +14,7 @@ scriptlib_SCRIPTS = \
 	lmt_update_router_agg
 
 dist_scriptlib_DATA = \
-	create_schema-1.1.sql \
+	create_schema-1.2.sql \
 	mkusers.sql
 
 scriptlib_DATA = \
