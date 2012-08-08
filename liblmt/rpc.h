@@ -27,7 +27,7 @@
 int lmt_rpc_string (pctx_t ctx, char *s, int len);
 
 int lmt_rpc_decode (const char *s, char **ossnamep, float *tbd, List *ostinfop);
-int lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, uint64_t *tbd);
+int lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, char **tbd);
 
 
 /*

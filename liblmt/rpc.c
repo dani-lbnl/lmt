@@ -131,7 +131,7 @@ _parse_brw_stat(pctx_t ctx, char *name, brw_t t, char *s, int len)
     }
   if(brw_stats_hist != NULL)
     histogram_destroy(brw_stats_hist);
-  return 0;
+  return n;
 }
 
 static int
@@ -247,7 +247,7 @@ done:
 }
 
 int
-lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, uint64_t *tbdp)
+lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, char **tbdp)
 {
     int retval = -1;
     char *ostname = xmalloc (strlen (s) + 1);;
@@ -258,7 +258,6 @@ lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, uint64_t *tbdp)
     char *flight_hist = xmalloc (strlen (s) + 1);;
     char *iotime_hist = xmalloc (strlen (s) + 1);;
     char *iosize_hist = xmalloc (strlen (s) + 1);;
-    uint64_t tbd;
 
     if (sscanf( s, "%[^;];{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};",
                 ostname, rpc_hist, dispages_hist, disblocks_hist, 
