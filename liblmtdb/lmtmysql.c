@@ -159,6 +159,14 @@ const char *sql_create_fs =
 const char *sql_use_fs =
     "use `filesystem_%s`";
 
+/*
+ * FIXME:
+ *   Note that making lmt_db_add() idempotent means that an already
+ * existing FILESYSTEM_INFO entry will not have its SCHEMA_VERSION
+ * updated, even when it probably should. Since this information is
+ * never used it is not a central issue. It should eventually be 
+ * addressed, though.
+ */
 const char *sql_ins_filesystem_info =
     "insert ignore into FILESYSTEM_INFO "
     "(FILESYSTEM_NAME, FILESYSTEM_MOUNT_NAME, SCHEMA_VERSION) "
