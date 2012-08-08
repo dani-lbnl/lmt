@@ -71,7 +71,7 @@ static const struct option longopts[] = {
 #define GETOPT(ac,av,opt,lopt) getopt (ac,av,opt)
 #endif
 
-#define LMT_SCHEMA_VERSION "1.1"
+#define LMT_SCHEMA_VERSION "1.2"
 #define LMT_SCHEMA_PATH \
     X_DATADIR "/" PACKAGE "/create_schema-" LMT_SCHEMA_VERSION ".sql"
 

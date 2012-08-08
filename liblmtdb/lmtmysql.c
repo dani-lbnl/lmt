@@ -155,12 +155,12 @@ const char *sql_sel_router_info_tmpl =
 const char *sql_drop_fs =
     "drop database `filesystem_%s`";
 const char *sql_create_fs =
-    "create database `filesystem_%s`";
+    "create database if not exists `filesystem_%s`";
 const char *sql_use_fs =
     "use `filesystem_%s`";
 
 const char *sql_ins_filesystem_info =
-    "insert into FILESYSTEM_INFO "
+    "insert ignore into FILESYSTEM_INFO "
     "(FILESYSTEM_NAME, FILESYSTEM_MOUNT_NAME, SCHEMA_VERSION) "
     "values ('%s', '', '%s')";
 
