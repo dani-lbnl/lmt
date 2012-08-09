@@ -575,7 +575,29 @@ create table if not exists FILESYSTEM_AGGREGATE_YEAR (
     index(TS_ID),
     index(VARIABLE_ID)
 );
-    
+# New tables for RPC stats info (/proc/fs/lustre/obdfilter/<ost>/brw_stats
+create table if not exists BRW_STATS_INFO (
+    STATS_ID        int unsigned not null auto_increment,
+    CODE            varchar(16),
+    DESCRIPTION	    varchar(128),
+    UNITS           varchar(16),
+    primary key (STATS_ID),
+    index(STATS_ID)
+);
+create table if not exists BRW_STATS_DATA (
+    TS_ID           int unsigned    not null,
+    STATS_ID        int unsigned    not null,
+    BIN             integer         not null,
+    READ_COUNT      integer,
+    WRITE_COUNT     integer,
+    primary key (TS_ID,STATS_ID,BIN),
+    foreign key(TS_ID) references TIMESTAMP_INFO(TS_ID),
+    foreign key(STATS_ID) references BRW_STATS_INFO(STATS_ID),
+    index(TS_ID),
+    index(STATS_ID),
+    index(BIN)
+);
+
 insert ignore into OPERATION_INFO (OPERATION_NAME, UNITS) values ('open', 'reqs');
 insert ignore into OPERATION_INFO (OPERATION_NAME, UNITS) values ('close', 'reqs');
 insert ignore into OPERATION_INFO (OPERATION_NAME, UNITS) values ('mknod', 'reqs');
@@ -686,6 +708,15 @@ insert ignore into ROUTER_VARIABLE_INFO (VARIABLE_NAME,VARIABLE_LABEL,THRESH_TYP
 insert ignore into ROUTER_VARIABLE_INFO (VARIABLE_NAME,VARIABLE_LABEL,THRESH_TYPE) values ('RATE', 'Rate', 0);
 insert ignore into ROUTER_VARIABLE_INFO (VARIABLE_NAME,VARIABLE_LABEL,THRESH_TYPE) values ('BANDWIDTH','Bandwidth', 0);
 insert ignore into ROUTER_VARIABLE_INFO (VARIABLE_NAME,VARIABLE_LABEL,THRESH_TYPE, THRESH_VAL1, THRESH_VAL2) values ('PCT_CPU', '%CPU', 3, 90., 101.);
+
+# Data for new table for RPC stats info (/proc/fs/lustre/obdfilter/<ost>/brw_stats
+insert ignore into BRW_STATS_INFO (CODE, DESCRIPTION, UNITS) values ('BRW_RPC', 'pages per bulk r/w', 'pages');
+insert ignore into BRW_STATS_INFO (CODE, DESCRIPTION, UNITS) values ('BRW_DISPAGES', 'discontiguous pages', 'pages');
+insert ignore into BRW_STATS_INFO (CODE, DESCRIPTION, UNITS) values ('BRW_DISBLOCKS', 'discontiguous blocks', 'blocks');
+insert ignore into BRW_STATS_INFO (CODE, DESCRIPTION, UNITS) values ('BRW_FRAG', 'disk fragmented I/Os', 'I/Os');
+insert ignore into BRW_STATS_INFO (CODE, DESCRIPTION, UNITS) values ('BRW_FLIGHT', 'disk I/Os in flight', 'I/Os');
+insert ignore into BRW_STATS_INFO (CODE, DESCRIPTION, UNITS) values ('BRW_IOTIME', 'I/O time (1/1000s)', 'ms');
+insert ignore into BRW_STATS_INFO (CODE, DESCRIPTION, UNITS) values ('BRW_IOSIZE', 'disk I/O size', 'bytes');
 #
 # LMT3 SCHEMA 1.2 - end
 #
