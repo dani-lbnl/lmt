@@ -53,6 +53,8 @@ int lmt_db_insert_ost_data (lmt_db_t db, char *ossname, char *ostname,
 int lmt_db_insert_router_data (lmt_db_t db, char *name,
                         uint64_t bytes, float pct_cpu);
 
+int lmt_db_insert_rpc_data (lmt_db_t db, char *ossname, char *ostname, char *histname, 
+			    int bin, uint64_t read_count, uint64_t write_count);
 /* accessors */
 
 char *lmt_db_fsname (lmt_db_t db);

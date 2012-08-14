@@ -44,6 +44,7 @@
 #include "list.h"
 #include "hash.h"
 #include "proc.h"
+#include "lustre.h"
 #include "lmtmysql.h"
 #include "lmt.h"
 #include "lmtconf.h"
@@ -70,6 +71,7 @@ struct lmt_db_struct {
     MYSQL_STMT *ins_oss_data;
     MYSQL_STMT *ins_ost_data;
     MYSQL_STMT *ins_router_data;
+    MYSQL_STMT *ins_brw_stats_data;
 
     /* cached most recent TIMESTAMP_INFO insertion */
     uint64_t timestamp;
@@ -106,6 +108,10 @@ const char *sql_ins_router_data =
     "insert into ROUTER_DATA "
     "(ROUTER_ID, TS_ID, BYTES, PCT_CPU) "
     "values (?, ?, ?, ?)";
+const char *sql_ins_brw_stats_data =
+    "insert into BRW_STATS_DATA "
+    "(TS_ID, OST_ID, STATS_ID, BIN, READ_COUNT, WRITE_COUNT) "
+    "values ( ?, ?, ?, ?, ?, ?)";
 
 /* sql for populating the idcache in bulk */
 const char *sql_sel_mds_info =
@@ -120,6 +126,8 @@ const char *sql_sel_router_info =
     "select HOSTNAME, ROUTER_ID from ROUTER_INFO";
 const char *sql_sel_operation_info =
     "select OPERATION_NAME, OPERATION_ID from OPERATION_INFO";
+const char *sql_sel_brw_stats_info =
+    "select STATS_NAME, STATS_ID from BRW_STATS_INFO";
 
 /* sql for database autoconfig */
 const char *sql_ins_mds_info_tmpl =
@@ -150,6 +158,8 @@ const char *sql_sel_ost_info_tmpl =
     "select OST_NAME, OST_ID from OST_INFO where OST_NAME = '%s'";
 const char *sql_sel_router_info_tmpl =
     "select HOSTNAME, ROUTER_ID from ROUTER_INFO where HOSTNAME = '%s'";
+const char *sql_sel_brw_stats_info_tmpl =
+    "select STATS_NAME, STATS_ID from BRW_STATS_INFO where STATS_NAME = '%s'";
 
 /* sql for lmtinit */
 const char *sql_drop_fs =
@@ -312,6 +322,9 @@ _populate_idhash (lmt_db_t db)
         goto done;
     /* OPERATION_INFO: OPERATION_NAME -> OPERATION_ID */
     if (_populate_idhash_all (db, "op", sql_sel_operation_info) < 0)
+        goto done;
+    /* BRW_STATS_INFO:    STATS_NAME -> STATS_ID */
+    if (_populate_idhash_all (db, "stats", sql_sel_brw_stats_info) < 0)
         goto done;
     retval = 0;
 done: 
@@ -900,6 +913,77 @@ done:
     return retval;
 }
 
+int
+lmt_db_insert_rpc_data (lmt_db_t db, char *ossname, char *ostname, char *histname, 
+                        int bin, uint64_t read_count, uint64_t write_count)
+{
+    MYSQL_BIND param[6];
+    uint64_t ost_id;
+    uint64_t stats_id;
+    int retval = -1;
+
+    /* Start here */
+    assert (db->magic == LMT_DBHANDLE_MAGIC);
+    if (!db->ins_brw_stats_data) {
+        if (lmt_conf_get_db_debug ())
+            msg ("no permission to insert into %s OST_DATA",
+                 lmt_db_fsname (db));
+        goto done;
+    }
+    if (_lookup_idhash (db, "ost", ostname, &ost_id) < 0) {
+        if (lmt_conf_get_db_autoconf ()) {
+            if (lmt_conf_get_db_debug ())
+                msg ("adding %s to %s OST_INFO", ostname, lmt_db_fsname (db));
+            if (_insert_ost_info (db, ossname, ostname, &ost_id) < 0)
+                goto done;
+        } else {
+            if (lmt_conf_get_db_debug ())
+                msg ("%s: no entry in %s OST_INFO and db_autoconf disabled",
+                     ostname, lmt_db_fsname (db));
+            retval = 0; /* avoid a reconnect */
+            goto done;
+        }
+    }
+    if ( ! _lookup_idhash (db, "stats", histname, &stats_id) < 0) {
+      if (lmt_conf_get_db_debug ())
+	msg ("%s: no entry in %s BRW_STATS_INFO",
+	     histname, lmt_db_fsname (db));
+      retval = 0; /* avoid a reconnect */
+      goto done;
+    }
+    if (_update_timestamp (db) < 0)
+        goto done;
+
+    memset (param, 0, sizeof (param));
+    assert (mysql_stmt_param_count (db->ins_brw_stats_data) == 6);
+    _param_init_int (&param[0], MYSQL_TYPE_LONG, &db->timestamp_id);
+    _param_init_int (&param[1], MYSQL_TYPE_LONG, &ost_id);
+    _param_init_int (&param[2], MYSQL_TYPE_LONG, &stats_id);
+    _param_init_int (&param[3], MYSQL_TYPE_LONG, &bin);
+    _param_init_int (&param[4], MYSQL_TYPE_LONGLONG, &read_count);
+    _param_init_int (&param[5], MYSQL_TYPE_LONGLONG, &write_count);
+   
+    if (mysql_stmt_bind_param (db->ins_brw_stats_data, param)) {
+        if (lmt_conf_get_db_debug ())
+            msg ("error binding parameters for insert into %s BRW_STATS_DATA: %s",
+                lmt_db_fsname (db), mysql_error (db->conn));
+        goto done;
+    }
+    if (mysql_stmt_execute (db->ins_brw_stats_data)) {
+        if (mysql_errno (db->conn) == ER_DUP_ENTRY) {
+            retval = 0; /* expected failure if previous insert was delayed */
+            goto done;
+        }
+        if (lmt_conf_get_db_debug ())
+            msg ("error executing insert into %s BRW_STATS_DATA: %s",
+                 lmt_db_fsname (db), mysql_error (db->conn));
+        goto done;
+    }
+    retval = 0;
+done:
+    return retval;
+}
+
 /**
  ** Database handle functions
  **/
@@ -943,6 +1027,8 @@ lmt_db_destroy (lmt_db_t db)
         mysql_stmt_close (db->ins_ost_data);
     if (db->ins_router_data)
         mysql_stmt_close (db->ins_router_data);
+    if (db->ins_brw_stats_data)
+        mysql_stmt_close (db->ins_brw_stats_data);
     if (db->idhash)
         hash_destroy (db->idhash);
     if (db->conn)
@@ -989,6 +1075,8 @@ lmt_db_create (int readonly, const char *dbname, lmt_db_t *dbp)
         if (_prepare_stmt (db, &db->ins_ost_data, sql_ins_ost_data) < 0)
             prepfail++;
         if (_prepare_stmt (db, &db->ins_router_data, sql_ins_router_data) < 0)
+            prepfail++;
+        if (_prepare_stmt (db, &db->ins_brw_stats_data, sql_ins_brw_stats_data) < 0)
             prepfail++;
     }
     if (prepfail) {

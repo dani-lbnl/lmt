@@ -49,7 +49,7 @@
 #include "lmtdb.h"
 
 #define MONITOR_NAME            "lmt_mysql"
-#define METRIC_NAMES            "lmt_mdt,lmt_ost,lmt_router"
+#define METRIC_NAMES            "lmt_mdt,lmt_ost,lmt_router,lmt_rpc"
 #define LEGACY_METRIC_NAMES     "lmt_oss,lmt_mds"
 
 static int
@@ -105,6 +105,8 @@ _metric_update (const char *nodename,
         lmt_db_insert_mdt_v1 (s);
     } else if (!strcmp (metric_name, "lmt_router") && vers == 1) {
         lmt_db_insert_router_v1 (s);
+    } else if (!strcmp (metric_name, "lmt_rpc") && vers == 1) {
+        lmt_db_insert_rpc_v1 (s);
     /* legacy metrics */
     } else if (!strcmp (metric_name, "lmt_mds") && vers == 2) {
         lmt_db_insert_mds_v2 (s);

@@ -23,11 +23,17 @@
  *  <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
+#define NUM_BRW_STATS 7
+typedef struct {
+  char *hist[NUM_BRW_STATS];
+} brw_stats_t;
 
 int lmt_rpc_string (pctx_t ctx, char *s, int len);
 
-int lmt_rpc_decode (const char *s, char **ossnamep, float *tbd, List *ostinfop);
-int lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, char **tbd);
+int lmt_rpc_decode_v1 (const char *s, char **ossnamep, List *ostinfop);
+
+int lmt_rpc_decode_v1_ostinfo (const char *s, char **ostnamep, 
+			       brw_stats_t **statsp);
 
 
 /*

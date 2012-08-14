@@ -44,9 +44,12 @@
 #include "error.h"
 
 #include "proc.h"
+#include "lustre.h"
 
+#include "util.h"
 #include "ost.h"
 #include "mdt.h"
+#include "rpc.h"
 #include "router.h"
 #include "lmtmysql.h"
 #include "lmtconf.h"
@@ -77,6 +80,8 @@ static struct timeval last_connect = { .tv_usec = 0, .tv_sec = 0 };
 static int reconnect_needed = 1;
 
 #define MIN_RECONNECT_SECS  15
+
+extern char *brw_enum_strings;
 
 static int
 _init_db_ifneeded (void)
@@ -419,6 +424,124 @@ done:
         free (ostname);    
     if (ossname)
         free (ossname);    
+}
+
+static int
+_insert_brw_stats_data( lmt_db_t db, char *ossname, char *ostname, char *hist) 
+{
+  int ret = -1;
+  int len = strlen(hist);
+  int bin;
+  uint64_t read_count, write_count;
+  char *p;
+  char *histname;
+
+  if( (p = strchr( hist, ':' )) == NULL ) {
+    if (lmt_conf_get_proto_debug ())
+      msg ("lmt_mysql::_insert_brw_stats_data: parse error: finding delimiter");
+    goto done;
+  }
+  histname = xmalloc(p - hist);
+  if( sscanf(hist, "%[^:]:", histname) != 1 ) {
+    if (lmt_conf_get_proto_debug ())
+      msg ("lmt_mysql::_insert_brw_stats_data: parse error: parsing histogram name");
+    goto done;
+  }
+  if( *(p+1) != '{' ) {
+    if (lmt_conf_get_proto_debug ())
+      msg ("lmt_mysql::_insert_brw_stats_data: parse error: finding beginning");
+    goto done;
+  }
+  p += 2;
+  /* Pull out the histogram entries one by one */
+  while( p && *p )
+    {
+      if( sscanf(p, "%d:{%ld,%ld}", &bin, &read_count, &write_count) != 3 ) {
+	if (lmt_conf_get_proto_debug ())
+	  msg ("_insert_brw_stats_data: parse error: parsing bin");
+	goto done;
+      }
+      if (lmt_db_insert_rpc_data (db, ossname, ostname, histname, bin, read_count, write_count) < 0) {
+        _trigger_db_reconnect ();
+        goto done;
+      }
+      if( !(p = strskip(p, 1, ',')) ) {
+	if (lmt_conf_get_proto_debug ())
+	  msg ("_insert_brw_stats_data: parse error: skipping first comma");
+	goto done;
+      }
+      /* If there isn't a second comma it is the end of the histogram */
+      if( p = strchr(p, ',')) p++;
+      /* 
+       * The termination condition is that p comes back NULL here. If
+       * for some odd reason p ended up at the end of the string then
+       * it's really not right, but we've successfully got all the 
+       * data that was there. It will terminate gracefully. 
+       * Maybe issue a warning? 
+       */
+    }
+  ret = 0;
+ done:
+  if( histname) free(histname);
+  return ret;
+}
+
+/* Helper for lmt_db_insert_rpc_v1 () */
+static void
+_insert_rpcinfo (char *ossname, char *s)
+{
+    lmt_db_t db;
+    char *ostname = NULL;
+    brw_stats_t *stats = NULL;
+    int i;
+
+    /* This pulls the OST data into seven histograms. */
+    /* N.B. I'm lazy so it's just strings. */
+    if (lmt_rpc_decode_v1_ostinfo (s, &ostname, &stats) < 0) {
+        goto done;
+    }
+    if (!(db = _svc_to_db (ostname)))
+        goto done;
+    for( i = 0; i < NUM_BRW_STATS; i++ )
+      {
+	if( !stats->hist[i] )
+	  {
+	    if (lmt_conf_get_proto_debug ())
+	      msg( "lmt_mysql::_insert_rpcinfo() - missing histogram for %s ", 
+		   brw_enum_strings[i] );
+	    goto done;
+	  }
+	/* Put one histogram in the table */
+	if( _insert_brw_stats_data(db, ossname, ostname, stats->hist[i]) < 0 )
+	  goto done;
+      }	
+done:
+    if (ostname)
+        free (ostname);
+    if (stats) brw_stats_destroy(stats);
+}
+
+void 
+lmt_db_insert_rpc_v1 (char *s)
+{
+    ListIterator itr = NULL;
+    char *ostr, *ossname = NULL;
+    List ostinfo = NULL;
+
+    if (_init_db_ifneeded () < 0)
+        goto done;
+    /* This breaks the message into one message per ost */
+    if (lmt_rpc_decode_v1 (s, &ossname, &ostinfo) < 0)
+        goto done;
+    itr = list_iterator_create (ostinfo);
+    while ((ostr = list_next (itr)))
+        _insert_rpcinfo (ossname, ostr);
+    list_iterator_destroy (itr);
+done:
+    if (ossname)
+        free (ossname);    
+    if (ostinfo)
+        list_destroy (ostinfo);
 }
 
 /*

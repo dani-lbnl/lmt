@@ -55,6 +55,8 @@
 #include "lmtconf.h"
 
 
+#define LMT_RPC_PROTOCOL_VERSION 1
+
 #define MAX_BRW_STAT_LEN 1500
 
 /* I don't actually use these, but I keep them here for reference */
@@ -187,7 +189,15 @@ lmt_rpc_string (pctx_t ctx, char *s, int len)
         err ("uname");
         goto done;
     }
-    n = snprintf (s, len, "2;%s;",
+    /* 
+     * There is some confusion about versions. The CEREBRO protocol
+     * version is 2 at this point.  There are also version 1 and
+     * version 2 LMT metrics. The rpc metric is version 1, which is
+     * hard-coded here. Since I copied this module largely from the
+     * version 2 ost metric I had to dig around a bit before I
+     * realized this.
+     */
+    n = snprintf (s, len, "%d;%s;", LMT_RPC_PROTOCOL_VERSION, 
                   uts.nodename);
     if (n >= len) {
         if (lmt_conf_get_proto_debug ())
@@ -210,19 +220,19 @@ done:
 }
 
 int
-lmt_rpc_decode (const char *s, char **ossnamep, float *tbdp, List *ostinfop)
+lmt_rpc_decode_v1 (const char *s, char **ossnamep, List *ostinfop)
 {
     int retval = -1;
     char *ossname =  xmalloc (strlen(s) + 1);
     char *cpy = NULL;
     List ostinfo = list_create ((ListDelF)free);
 
-    if (sscanf (s, "%[^;];", ossname) != 1) {
+    if (sscanf (s, "%*f;%[^;];", ossname) != 1) {
         if (lmt_conf_get_proto_debug ())
             msg ("lmt_rpc: parse error: oss name");
         goto done;
     }
-    if (!(s = strskip (s, 1, ';'))) {
+    if (!(s = strskip (s, 2, ';'))) {
         if (lmt_conf_get_proto_debug ())
             msg ("lmt_rpc: parse error: skipping oss name");
         goto done;
@@ -232,7 +242,7 @@ lmt_rpc_decode (const char *s, char **ossnamep, float *tbdp, List *ostinfop)
         list_append (ostinfo, cpy);
     if (strlen (s) > 0) {
         if (lmt_conf_get_proto_debug ())
-            msg ("lmt_rpc: parse error: string not exhausted");
+	  msg ("lmt_rpc: parse error: string not exhausted: '%s'", s);
         goto done;
     }
     *ossnamep = ossname;
@@ -246,40 +256,72 @@ done:
     return retval;
 }
 
-int
-lmt_rpc_decode_ostinfo (const char *s, char **ostnamep, char **tbdp)
+brw_stats_t *
+brw_stats_create()
 {
-    int retval = -1;
-    char *ostname = xmalloc (strlen (s) + 1);;
-    char *rpc_hist = xmalloc (strlen (s) + 1);;
-    char *dispages_hist = xmalloc (strlen (s) + 1);;
-    char *disblocks_hist = xmalloc (strlen (s) + 1);;
-    char *frag_hist = xmalloc (strlen (s) + 1);;
-    char *flight_hist = xmalloc (strlen (s) + 1);;
-    char *iotime_hist = xmalloc (strlen (s) + 1);;
-    char *iosize_hist = xmalloc (strlen (s) + 1);;
+  brw_stats_t *s;
 
-    if (sscanf( s, "%[^;];{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};{%[^;]};",
-                ostname, rpc_hist, dispages_hist, disblocks_hist, 
-		frag_hist, flight_hist, iotime_hist, iosize_hist) != 8) {
-        if (lmt_conf_get_proto_debug ())
-            msg ("lmt_rpc: parse error: rpc ostinfo");
-        goto done;
+  if( !(s = malloc(sizeof(brw_stats_t))) )
+    msg_exit( "Out of memory" );
+  memset( s, 0, sizeof(brw_stats_t) );
+  return( s );
+}
+
+void
+brw_stats_destroy(brw_stats_t *s)
+{
+  int i;
+
+  if( s )
+    {
+      for( i = 0; i < NUM_BRW_STATS; i++ )
+	{
+	  if( s->hist[i] != NULL )
+	    {
+	      free(s->hist[i]);
+	      s->hist[i] = NULL;
+	    }
+	}
+    }
+}
+
+int
+lmt_rpc_decode_v1_ostinfo (const char *s, char **ostnamep, 
+			   brw_stats_t **statsp)
+{
+  int retval = -1;
+  int i = 0;
+  brw_stats_t *stats = brw_stats_create();
+  char *ostname;
+
+  if( (ostname = strskipcpy(&s, 1, ';')) == NULL )
+    goto done;
+  /* 
+   * This rather lamely doesn't even decode much. It just
+   * extracts the seven brw_stats histograms from the message
+   * and preserves them a seven separate strings. They'll 
+   * actually get interpreted once they are being put into the
+   * DB.
+   */
+
+  while( (i < NUM_BRW_STATS) && *s ) 
+    {
+      if( (stats->hist[i] = strskipcpy(&s, 1, ';')) == NULL ) {
+	if (lmt_conf_get_proto_debug ())
+	  msg ("lmt_rpc_decode_v1_ostinfo: parse error: failed to parse %s histogram", 
+	       brw_enum_strings[i]);
+	goto done;
+      }
+      i++;
     }
     *ostnamep = ostname;
-    *tbdp = rpc_hist;
-    /* Now that I have it, what do I do with it? */
+    *statsp = stats;
+
     retval = 0;
 done:
     if (retval < 0) {
-        free (ostname);
-        free (rpc_hist);
-        free (dispages_hist);
-        free (disblocks_hist);
-        free (frag_hist);
-        free (flight_hist);
-        free (iotime_hist);
-        free (iosize_hist);
+      if( ostname != NULL ) free (ostname);
+      if( stats != NULL ) brw_stats_destroy(stats);
     }
     return retval;
 }
