@@ -2,7 +2,7 @@
 
 If I am very lucky I will be able to develop and build on Compiler and
 the libraries will just work on the Grace OSSs. The versions of CentOS
-are off by one, and the kerenels differe by build numbers, but are
+are off by one, and the kerenels differ by build numbers, but are
 otherwise the same. The architectures are the same. There's hope.
 
 I'll do all the development in the 'rpc-stats' branch rather than in
