@@ -49,7 +49,7 @@
 #include "util.h"
 #include "ost.h"
 #include "mdt.h"
-#include "rpc.h"
+#include "brw.h"
 #include "router.h"
 #include "lmtmysql.h"
 #include "lmtconf.h"
@@ -461,7 +461,7 @@ _insert_brw_stats_data( lmt_db_t db, char *ossname, char *ostname, char *hist)
 	  msg ("_insert_brw_stats_data: parse error: parsing bin");
 	goto done;
       }
-      if (lmt_db_insert_rpc_data (db, ossname, ostname, histname, bin, read_count, write_count) < 0) {
+      if (lmt_db_insert_brw_data (db, ossname, ostname, histname, bin, read_count, write_count) < 0) {
         _trigger_db_reconnect ();
         goto done;
       }
@@ -486,9 +486,9 @@ _insert_brw_stats_data( lmt_db_t db, char *ossname, char *ostname, char *hist)
   return ret;
 }
 
-/* Helper for lmt_db_insert_rpc_v1 () */
+/* Helper for lmt_db_insert_brw_v1 () */
 static void
-_insert_rpcinfo (char *ossname, char *s)
+_insert_brwinfo (char *ossname, char *s)
 {
     lmt_db_t db;
     char *ostname = NULL;
@@ -497,7 +497,7 @@ _insert_rpcinfo (char *ossname, char *s)
 
     /* This pulls the OST data into seven histograms. */
     /* N.B. I'm lazy so it's just strings. */
-    if (lmt_rpc_decode_v1_ostinfo (s, &ostname, &stats) < 0) {
+    if (lmt_brw_decode_v1_ostinfo (s, &ostname, &stats) < 0) {
         goto done;
     }
     if (!(db = _svc_to_db (ostname)))
@@ -507,7 +507,7 @@ _insert_rpcinfo (char *ossname, char *s)
 	if( !stats->hist[i] )
 	  {
 	    if (lmt_conf_get_proto_debug ())
-	      msg( "lmt_mysql::_insert_rpcinfo() - missing histogram for %s ", 
+	      msg( "lmt_mysql::_insert_brwinfo() - missing histogram for %s ", 
 		   brw_enum_strings[i] );
 	    goto done;
 	  }
@@ -522,7 +522,7 @@ done:
 }
 
 void 
-lmt_db_insert_rpc_v1 (char *s)
+lmt_db_insert_brw_v1 (char *s)
 {
     ListIterator itr = NULL;
     char *ostr, *ossname = NULL;
@@ -531,11 +531,11 @@ lmt_db_insert_rpc_v1 (char *s)
     if (_init_db_ifneeded () < 0)
         goto done;
     /* This breaks the message into one message per ost */
-    if (lmt_rpc_decode_v1 (s, &ossname, &ostinfo) < 0)
+    if (lmt_brw_decode_v1 (s, &ossname, &ostinfo) < 0)
         goto done;
     itr = list_iterator_create (ostinfo);
     while ((ostr = list_next (itr)))
-        _insert_rpcinfo (ossname, ostr);
+        _insert_brwinfo (ossname, ostr);
     list_iterator_destroy (itr);
 done:
     if (ossname)

@@ -7,8 +7,8 @@ noinst_LTLIBRARIES = liblmt.la
 liblmt_la_SOURCES = \
 	ost.c \
 	ost.h \
-	rpc.c \
-	rpc.h \
+	brw.c \
+	brw.h \
 	mdt.c \
 	mdt.h \
 	osc.c \

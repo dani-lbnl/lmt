@@ -914,7 +914,7 @@ done:
 }
 
 int
-lmt_db_insert_rpc_data (lmt_db_t db, char *ossname, char *ostname, char *histname, 
+lmt_db_insert_brw_data (lmt_db_t db, char *ossname, char *ostname, char *histname, 
                         int bin, uint64_t read_count, uint64_t write_count)
 {
     MYSQL_BIND param[6];

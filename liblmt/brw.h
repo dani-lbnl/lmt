@@ -23,13 +23,18 @@
  *  <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-void lmt_db_insert_ost_v2 (char *s);
-void lmt_db_insert_mdt_v1 (char *s);
-void lmt_db_insert_router_v1 (char *s);
-void lmt_db_insert_brw_v1 (char *s);
-void lmt_db_insert_mds_v2 (char *s); // legacy
-void lmt_db_insert_oss_v1 (char *s); // legacy
-void lmt_db_insert_ost_v1 (char *s); // legacy
+#define NUM_BRW_STATS 7
+typedef struct {
+  char *hist[NUM_BRW_STATS];
+} brw_stats_t;
+
+int lmt_brw_string (pctx_t ctx, char *s, int len);
+
+int lmt_brw_decode_v1 (const char *s, char **ossnamep, List *ostinfop);
+
+int lmt_brw_decode_v1_ostinfo (const char *s, char **ostnamep, 
+			       brw_stats_t **statsp);
+
 
 /*
  * vi:tabstop=4 shiftwidth=4 expandtab

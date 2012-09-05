@@ -20,7 +20,7 @@ modulelib_LTLIBRARIES = \
 	cerebro_metric_lmt_mdt.la \
 	cerebro_metric_lmt_osc.la \
 	cerebro_metric_lmt_router.la \
-	cerebro_metric_lmt_rpc.la 
+	cerebro_metric_lmt_brw.la 
 
 cerebro_metric_lmt_ost_la_SOURCES = ost.c
 cerebro_metric_lmt_ost_la_LDFLAGS = $(module_ldflags)
@@ -38,7 +38,7 @@ cerebro_metric_lmt_router_la_SOURCES = router.c
 cerebro_metric_lmt_router_la_LDFLAGS = $(module_ldflags)
 cerebro_metric_lmt_router_la_LIBADD = $(common_libadd)
 
-cerebro_metric_lmt_rpc_la_SOURCES = rpc.c
-cerebro_metric_lmt_rpc_la_LDFLAGS = $(module_ldflags)
-cerebro_metric_lmt_rpc_la_LIBADD = $(common_libadd)
+cerebro_metric_lmt_brw_la_SOURCES = brw.c
+cerebro_metric_lmt_brw_la_LDFLAGS = $(module_ldflags)
+cerebro_metric_lmt_brw_la_LIBADD = $(common_libadd)
 
