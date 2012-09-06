@@ -1,5 +1,5 @@
 Name: lmt
-Version: 3.1.5
+Version: 3.1.5a
 Release: 1
 
 # TODO: lmt-utils subpackage for ltop (once ltop can read proc directly)
@@ -7,8 +7,8 @@ Release: 1
 License: GPL
 Group: Applications/System
 Summary: Lustre Montitoring Tool
-URL: http://github.com/chaos/lmt
-Packager: Ned Bass <bass6@llnl.gov>
+URL: http://github.com/uselton/lmt
+Packager: Andrew Uselton <acuselton@lbl.gov>
 Source: %{name}-%{version}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 BuildRequires: mysql, mysql-devel
