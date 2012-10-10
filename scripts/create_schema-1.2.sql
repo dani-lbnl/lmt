@@ -94,7 +94,7 @@ create table if not exists OST_VARIABLE_INFO (
     THRESH_VAL1     float,
     THRESH_VAL2     float,
     primary key (VARIABLE_ID),
-    key (VARIABLE_NAME),
+    unique key (VARIABLE_NAME),
     index(VARIABLE_ID)
 );
 create table if not exists OSS_VARIABLE_INFO (
@@ -105,7 +105,7 @@ create table if not exists OSS_VARIABLE_INFO (
     THRESH_VAL1     float,
     THRESH_VAL2     float,
     primary key (VARIABLE_ID),
-    key (VARIABLE_NAME),
+    unique key (VARIABLE_NAME),
     index(VARIABLE_ID)
 );
 create table if not exists MDS_VARIABLE_INFO (
@@ -116,7 +116,7 @@ create table if not exists MDS_VARIABLE_INFO (
     THRESH_VAL1     float,
     THRESH_VAL2     float,
     primary key (VARIABLE_ID),
-    key (VARIABLE_NAME),
+    unique key (VARIABLE_NAME),
     index(VARIABLE_ID)
 );
 create table if not exists ROUTER_VARIABLE_INFO (
@@ -582,6 +582,7 @@ create table if not exists BRW_STATS_INFO (
     DESCRIPTION	    varchar(128),
     UNITS           varchar(16),
     primary key (STATS_ID),
+    unique key (STATS_NAME),
     index(STATS_ID)
 );
 create table if not exists BRW_STATS_DATA (
