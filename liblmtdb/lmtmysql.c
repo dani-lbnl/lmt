@@ -52,11 +52,51 @@
 #include "error.h"
 
 #define IDHASH_SIZE     256
-
+#define STATHASH_SIZE    7
+#define BINHASH_SIZE     32
+#define MAX_BINNAME_LEN  10
 typedef struct {
     char *key;
     uint64_t id;
 } svcid_t;
+
+/* 
+ *   Near 99% of all BRW_STATS_DATA observation are for values
+ * that have not changed since the last observation. Much 
+ * MySQL space can be saved if we do not keep every such row.
+ * To do so we need to maintain state for the BRW_STATS_DATA
+ * observations.
+ *   In order to maintain state I need a new data structure that 
+ * is a hierarchy of hashes, a global hash will hold an entry
+ * for each OST. The entry for an OST will hold entries for 
+ * each stat for that OST, and the stat entry will itself have 
+ * a hash for bins for that stat. Each bin entry will have 
+ * fields for (the timestamp of the first observaton, and the
+ * most recent observation, and for the read count and write 
+ * count. The structure as a whole maintains the state of the
+ * observations for the interval where the counters have not 
+ * changed. 
+ */
+typedef struct {
+  char *ost;
+  uint64_t id;
+  brw_stat_t *stat;
+} brw_ost_t;
+
+typedef struct {
+  char *stat;
+  uint64_t id;
+  brw_bin_t *bin;
+} brw_stat_t;
+
+typedef struct {
+  char *name;
+  uint64 bin;
+  uint64 first;
+  uint64 last;
+  uint64 read;
+  uint64 write;
+} brw_bin_t;
 
 #define LMT_DBHANDLE_MAGIC 0x5454aabf
 struct lmt_db_struct {
@@ -913,50 +953,107 @@ done:
     return retval;
 }
 
+/**
+ ** BRW state data functions (internal)
+ **/
+
+static void
+_destroy_brw_ost (brw_ost_t *o)
+{
+    if (o) {
+        if (o->ost)
+            free (o->ost);
+	if( o->stat )
+	  {
+	    _destroy_brw_stat(o->stat);
+	    free(o->stat);
+	  }
+        free (o);
+   }
+}
+
+static brw_ost_t *
+_create_brw_ost (const char *ost, uint64_t id)
+{
+    brw_ost_t *o = xmalloc (sizeof (brw_ost_t));
+    int namelen = strlen (ost) + 1;
+
+    memset (o, 0, sizeof (brw_ost_t));
+    o->key = xmalloc (namelen);
+    snprintf (o->ost, namelen, "%s", key);
+    o->id = id;
+    o->stat = hash_create( STATHASH_SIZE, (hash_key_f)hash_key_string,
+			   (hash_cmp_f)strcmp, (hash_del_f)_destroy_brw_stat );
+    return o;
+}
+
+static void
+_destroy_brw_stat (brw_stat_t *s)
+{
+    if (s) {
+        if (s->key)
+            free (s->key);
+	if( s->bin )
+	  {
+	    _destroy_brw_bin(s->bin);
+	    free(s->bin);
+	  }
+        free (s);
+   }
+}
+
+static brw_stat_t *
+_create_brw_stat (const char *key, uint64_t id)
+{
+    brw_stat_t *s = xmalloc (sizeof (brw_stat_t));
+    int keylen = strlen (key) + 1;
+
+    memset (s, 0, sizeof (brw_stat_t));
+    s->key = xmalloc (keylen);
+    snprintf (s->key, keylen, "%s", key);
+    s->id = id;
+    s->bin = hash_create( BINHASH_SIZE, (hash_key_f)hash_key_string,
+			    (hash_cmp_f)strcmp, (hash_del_f)_destroy_brw_iost );
+    return s;
+}
+
+static void
+_destroy_brw_bin (brw_stats_t *b)
+{
+    if (b) {
+        if (b->name)
+            free (b->name);
+        free (b);
+   }
+}
+
+static brw_bin_t *
+_create_brw_bin (const char *name, uint64 bin, uint64_t first, uint64 read, uint64 write)
+{
+    brw_bin_t *b = xmalloc (sizeof (brw_bin_t));
+    int namelen = strlen (name) + 1;
+
+    memset (b, 0, sizeof (brw_bin_t));
+    b->name = xmalloc (namelen);
+    snprintf (b->name, namelen, "%s", name);
+    b->bin   = bin;
+    b->first = first;
+    b->last  = first;
+    b->read  = read;
+    b->write = write;
+    return b;
+}
+
 int
-lmt_db_insert_brw_data (lmt_db_t db, char *ossname, char *ostname, char *histname, 
-                        int bin, uint64_t read_count, uint64_t write_count)
+_insert_brw_data(lmt_db_t db, uint64_t ts, uint64_t ost_id, uint64_t stats_id,
+		 uint64_t bin, uint64_t read, uint64_t write)
 {
     MYSQL_BIND param[6];
-    uint64_t ost_id;
-    uint64_t stats_id;
     int retval = -1;
-
-    /* Start here */
-    assert (db->magic == LMT_DBHANDLE_MAGIC);
-    if (!db->ins_brw_stats_data) {
-        if (lmt_conf_get_db_debug ())
-            msg ("no permission to insert into %s OST_DATA",
-                 lmt_db_fsname (db));
-        goto done;
-    }
-    if (_lookup_idhash (db, "ost", ostname, &ost_id) < 0) {
-        if (lmt_conf_get_db_autoconf ()) {
-            if (lmt_conf_get_db_debug ())
-                msg ("adding %s to %s OST_INFO", ostname, lmt_db_fsname (db));
-            if (_insert_ost_info (db, ossname, ostname, &ost_id) < 0)
-                goto done;
-        } else {
-            if (lmt_conf_get_db_debug ())
-                msg ("%s: no entry in %s OST_INFO and db_autoconf disabled",
-                     ostname, lmt_db_fsname (db));
-            retval = 0; /* avoid a reconnect */
-            goto done;
-        }
-    }
-    if ( ! _lookup_idhash (db, "stats", histname, &stats_id) < 0) {
-      if (lmt_conf_get_db_debug ())
-	msg ("%s: no entry in %s BRW_STATS_INFO",
-	     histname, lmt_db_fsname (db));
-      retval = 0; /* avoid a reconnect */
-      goto done;
-    }
-    if (_update_timestamp (db) < 0)
-        goto done;
 
     memset (param, 0, sizeof (param));
     assert (mysql_stmt_param_count (db->ins_brw_stats_data) == 6);
-    _param_init_int (&param[0], MYSQL_TYPE_LONG, &db->timestamp_id);
+    _param_init_int (&param[0], MYSQL_TYPE_LONG, &ts);
     _param_init_int (&param[1], MYSQL_TYPE_LONG, &ost_id);
     _param_init_int (&param[2], MYSQL_TYPE_LONG, &stats_id);
     _param_init_int (&param[3], MYSQL_TYPE_LONG, &bin);
@@ -982,6 +1079,206 @@ lmt_db_insert_brw_data (lmt_db_t db, char *ossname, char *ostname, char *histnam
     retval = 0;
 done:
     return retval;
+}
+
+brw_bin_t *
+_get_last_brw(lmt_db_t db, char *ostname, uint64 ost_id, char *histname, 
+	      uint64 stats_id, uint64 bin, uint65 read_count, uint64 write_count)
+{
+    brw_ost_t *o;
+    brw_stat_t *s;
+    brw_bin_t *b = NULL;
+    char binname[MAX_BINNAME_LEN]; 
+    /* remember previous observations */
+    static hash_t data_hash = NULL;
+
+    /* Initialize the value for the last seen timestamp id */
+    if( last == 0 )
+      last = db->timestamp_id;
+    /* Create the data_hash if necessary */
+    if ( data_hash == NULL )
+      {
+	data_hash = hash_create( IDHASH_SIZE, (hash_key_f)hash_key_string,
+				 (hash_cmp_f)strcmp, (hash_del_f)_destroy_brw_ost );
+      }
+    /* See if we already have a structure for ostname */
+    if( (o = hash_find (data_hash, ostname)) == NULL )
+      {
+	o = create_brw_ost(ostname, ost_id);
+        if (!hash_insert (data_hash, o->ost, o)) {
+	  if (lmt_conf_get_db_debug ())
+	    err ("brw_ost hash insert error: %s %s", lmt_db_fsname (db), o->ost);
+	  _destroy_brw_ost (o);
+	  goto done;
+        }
+      }
+    /* See if we already have a structure for histname */
+    if( (s = hash_find (o->stat, histname)) == NULL )
+      {
+	s = create_brw_stat(histname, stats_id);
+        if (!hash_insert (o->stat, s->stat, s)) {
+	  if (lmt_conf_get_db_debug ())
+	    err ("brw_stat hash insert error: %s %s", lmt_db_fsname (db), s->stat);
+	  _destroy_brw_ost (s);
+	  goto done;
+        }
+      }
+    /* See if we already have a structure for bin */
+    /* The bin arrives as an int. Create a string to go with */
+    /* it as a key. */
+    sprintf( binname, MAX_BINNAME_LEN, "%d", bin);
+    if( (b = hash_find (s->bin, binname)) == NULL )
+      {
+	b = create_brw_bin(binname, bin, db->timestamp_id, read_count, write_count);
+        if (!hash_insert (s->bin, b->name, b)) {
+            if (lmt_conf_get_db_debug ())
+                err ("brw_bin hash insert error: %s %s", lmt_db_fsname (db), binname);
+            _destroy_brw_ost (b);
+	    b = NULL;
+            goto done;
+        }
+      }
+ done:
+    return(b);
+}
+
+/*
+ * At this point we want to know? Is this a new value for either counter?
+ * If so:
+ *    a) Was the previous value recorded more than one TS_ID ago?
+ *       If so:
+ *          Send an insert with the old values and the most recent
+ *          prior TS_ID to the DB.
+ *    b) Send this new value in an insert with the current TS_ID.
+ *
+ * Implementation notes:
+ *   I should be able to use the hash mechanism to keep a data structure
+ * for remembering the last values. A 'data' global hashes verified OST names
+ * and has an entry for each OST. The hash entry itself has a hash for 
+ * verified stat names. In turn, each entry for a stat has a hash for 
+ * bins. Each entry in the bins hash has a struct with the tuple:
+ * (ts, read, write)
+ * If the 'data' global is not initialized, it gets initialized with the 
+ * first insert. An OST entry is initialized with the first occurance of
+ * an opservation for that OST in the sequence that is arriving. Similarly,
+ * a stat entry is initialized for a given OST the first time that 
+ * (ost, stat) pair appears. Finally, a bin entry is initialized with the
+ * (first, current, read, write) tuple the first time an (ost, stat, bin)
+ * entry (where both read and write are non-zero) arrives. 'first' and 
+ * 'current' are both initialized to the ts returne by db->timestamp_id.
+ *   In addition the the 'data' global there is a 'last' global that just tracks
+ * the last timestamp that has been in actual use prior to the timestamp 
+ * returned by db->timestmap_id.
+ *   When a (ts, ost, stat, bin, read, write) tuple arrives where the read and
+ * write value are the same as they were in the previous 'data' entry, then 
+ * the current ts is saved to the 'current' field in the data->ost->stat->bin
+ * record. When a tuple arrives that will change either of the counters, then
+ * if the 'current' field is after the 'first' field a new insert needs to be
+ * issued for the tuple (current, ost, stat, bin, read, write) where the values
+ * from the 'data' record. After that the 'data' record can be updated with 
+ * new values and an insert
+ */
+int
+lmt_db_insert_brw_data (lmt_db_t db, char *ossname, char *ostname, char *histname, 
+                        int bin, uint64_t read_count, uint64_t write_count)
+{
+  uint64_t ost_id;
+  uint64_t stats_id;
+  int retval = -1;
+  brw_bin_t *b;
+  /* remember last ts_id value */
+  static uint64_t last = 0;
+
+  /* Do not record zeros */
+  if( (read_count == 0) && (write_count == 0) )
+    {
+      retval = 0;
+      goto done;
+    }
+  assert (db->magic == LMT_DBHANDLE_MAGIC);
+  if (!db->ins_brw_stats_data) {
+    if (lmt_conf_get_db_debug ())
+      msg ("no permission to insert into %s OST_DATA",
+	   lmt_db_fsname (db));
+    goto done;
+  }
+  if (_lookup_idhash (db, "ost", ostname, &ost_id) < 0) {
+    if (lmt_conf_get_db_autoconf ()) {
+      if (lmt_conf_get_db_debug ())
+	msg ("adding %s to %s OST_INFO", ostname, lmt_db_fsname (db));
+      if (_insert_ost_info (db, ossname, ostname, &ost_id) < 0)
+	goto done;
+    } else {
+      if (lmt_conf_get_db_debug ())
+	msg ("%s: no entry in %s OST_INFO and db_autoconf disabled",
+	     ostname, lmt_db_fsname (db));
+      retval = 0; /* avoid a reconnect */
+      goto done;
+    }
+  }
+  if ( ! _lookup_idhash (db, "stats", histname, &stats_id) < 0) {
+    if (lmt_conf_get_db_debug ())
+      msg ("%s: no entry in %s BRW_STATS_INFO",
+	   histname, lmt_db_fsname (db));
+    retval = 0; /* avoid a reconnect */
+    goto done;
+  }
+  if (_update_timestamp (db) < 0)
+    goto done;
+  
+  if( (b = _get_last_brw(db, ostname, ost_id, histname, stats_id, bin, 
+			 read_count, write_count)) != NULL )
+    {
+      /* 
+       *  If for any reason we didn't get a previous bin value
+       * then just fall back to recording whatever you see. 
+       */
+      /* We now have an entry for the last recorded value. */
+      /* 
+       * Is it new news? 
+       * If we just created b then b->first will have the current 
+       * timstamp, and we don't want to ignore it.
+       */
+      if( (db->timestamp_id > b->first) && (read_count == b->read) && 
+	  (write_count == b->write) )
+	{
+	  /* no, it is old news */
+	  /* we don't need to put this one in the DB at this time, but
+	   * we do want to remember the last time it actually got 
+	   * info from the data collector
+	   */
+	  b->last = db->timestamp_id;
+	  retval = 0;
+	  goto done;
+	} 
+      /* Was there a long enough gap (> 1) so that we should */
+      /* record that the counters were idle for a significant period? */
+      if( (b->first < last) && (b->first < b->last) )
+	{
+	/* Yes, we need to note the last time that these counters */
+	/* reported the old value. */
+	if (_insert_brw_data(db, b->last, ost_id, stats_id, bin, 
+			     b->read, b->write)) 
+	  goto done;
+	}
+    }
+  /* So we've noted the (perhaps long) interval that the counters were idle, */
+  /* they weren't idle at this timestep, so update the preserved state values. */
+  b->first = db->timestamp_id;
+  b->last  = db->timestamp_id;
+  b->read  = read_count;
+  b->write = write_count;
+  
+  /* And go on to do the regular insert. */
+  /* N.B. This new way of doing things may introduce new records that */
+  /* are not in strictly ascending TS_ID order. This may have performance */
+  /* consequences. */
+  if (_insert_brw_data(db, db->timestamp_id, ost_id, stats_id, bin, 
+		       read_count, write_count)) 
+    goto done;
+  retval = 0;
+ done:
+  return retval;
 }
 
 /**
