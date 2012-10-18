@@ -78,25 +78,25 @@ typedef struct {
  * changed. 
  */
 typedef struct {
-  char *ost;
-  uint64_t id;
-  brw_stat_t *stat;
-} brw_ost_t;
+  char *name;
+  uint64_t bin;
+  uint64_t first;
+  uint64_t last;
+  uint64_t read;
+  uint64_t write;
+} brw_bin_t;
 
 typedef struct {
   char *stat;
   uint64_t id;
-  brw_bin_t *bin;
+  hash_t bin;
 } brw_stat_t;
 
 typedef struct {
-  char *name;
-  uint64 bin;
-  uint64 first;
-  uint64 last;
-  uint64 read;
-  uint64 write;
-} brw_bin_t;
+  char *ost;
+  uint64_t id;
+  hash_t stat;
+} brw_ost_t;
 
 #define LMT_DBHANDLE_MAGIC 0x5454aabf
 struct lmt_db_struct {
@@ -958,67 +958,7 @@ done:
  **/
 
 static void
-_destroy_brw_ost (brw_ost_t *o)
-{
-    if (o) {
-        if (o->ost)
-            free (o->ost);
-	if( o->stat )
-	  {
-	    _destroy_brw_stat(o->stat);
-	    free(o->stat);
-	  }
-        free (o);
-   }
-}
-
-static brw_ost_t *
-_create_brw_ost (const char *ost, uint64_t id)
-{
-    brw_ost_t *o = xmalloc (sizeof (brw_ost_t));
-    int namelen = strlen (ost) + 1;
-
-    memset (o, 0, sizeof (brw_ost_t));
-    o->key = xmalloc (namelen);
-    snprintf (o->ost, namelen, "%s", key);
-    o->id = id;
-    o->stat = hash_create( STATHASH_SIZE, (hash_key_f)hash_key_string,
-			   (hash_cmp_f)strcmp, (hash_del_f)_destroy_brw_stat );
-    return o;
-}
-
-static void
-_destroy_brw_stat (brw_stat_t *s)
-{
-    if (s) {
-        if (s->key)
-            free (s->key);
-	if( s->bin )
-	  {
-	    _destroy_brw_bin(s->bin);
-	    free(s->bin);
-	  }
-        free (s);
-   }
-}
-
-static brw_stat_t *
-_create_brw_stat (const char *key, uint64_t id)
-{
-    brw_stat_t *s = xmalloc (sizeof (brw_stat_t));
-    int keylen = strlen (key) + 1;
-
-    memset (s, 0, sizeof (brw_stat_t));
-    s->key = xmalloc (keylen);
-    snprintf (s->key, keylen, "%s", key);
-    s->id = id;
-    s->bin = hash_create( BINHASH_SIZE, (hash_key_f)hash_key_string,
-			    (hash_cmp_f)strcmp, (hash_del_f)_destroy_brw_iost );
-    return s;
-}
-
-static void
-_destroy_brw_bin (brw_stats_t *b)
+_destroy_brw_bin (brw_bin_t *b)
 {
     if (b) {
         if (b->name)
@@ -1028,7 +968,7 @@ _destroy_brw_bin (brw_stats_t *b)
 }
 
 static brw_bin_t *
-_create_brw_bin (const char *name, uint64 bin, uint64_t first, uint64 read, uint64 write)
+_create_brw_bin (const char *name, uint64_t bin, uint64_t first, uint64_t read, uint64_t write)
 {
     brw_bin_t *b = xmalloc (sizeof (brw_bin_t));
     int namelen = strlen (name) + 1;
@@ -1044,6 +984,66 @@ _create_brw_bin (const char *name, uint64 bin, uint64_t first, uint64 read, uint
     return b;
 }
 
+static void
+_destroy_brw_stat (brw_stat_t *s)
+{
+    if (s) {
+        if (s->stat)
+            free (s->stat);
+	if( s->bin )
+	  {
+	    hash_destroy(s->bin);
+	    free(s->bin);
+	  }
+        free (s);
+   }
+}
+
+static brw_stat_t *
+_create_brw_stat (const char *stat, uint64_t id)
+{
+    brw_stat_t *s = xmalloc (sizeof (brw_stat_t));
+    int namelen = strlen (stat) + 1;
+
+    memset (s, 0, sizeof (brw_stat_t));
+    s->stat = xmalloc (namelen);
+    snprintf (s->stat, namelen, "%s", stat);
+    s->id = id;
+    s->bin = hash_create( BINHASH_SIZE, (hash_key_f)hash_key_string,
+			    (hash_cmp_f)strcmp, (hash_del_f)_destroy_brw_bin );
+    return s;
+}
+
+static void
+_destroy_brw_ost (brw_ost_t *o)
+{
+    if (o) {
+        if (o->ost)
+            free (o->ost);
+	if( o->stat )
+	  {
+	    hash_destroy(o->stat);
+	    free(o->stat);
+	  }
+        free (o);
+   }
+}
+
+static brw_ost_t *
+_create_brw_ost (const char *ost, uint64_t id)
+{
+    brw_ost_t *o = xmalloc (sizeof (brw_ost_t));
+    int namelen = strlen (ost) + 1;
+
+    memset (o, 0, sizeof (brw_ost_t));
+    o->ost = xmalloc (namelen);
+    snprintf (o->ost, namelen, "%s", ost);
+    o->id = id;
+    o->stat = hash_create( STATHASH_SIZE, (hash_key_f)hash_key_string,
+			   (hash_cmp_f)strcmp, (hash_del_f)_destroy_brw_stat );
+    return o;
+}
+
 int
 _insert_brw_data(lmt_db_t db, uint64_t ts, uint64_t ost_id, uint64_t stats_id,
 		 uint64_t bin, uint64_t read, uint64_t write)
@@ -1057,8 +1057,8 @@ _insert_brw_data(lmt_db_t db, uint64_t ts, uint64_t ost_id, uint64_t stats_id,
     _param_init_int (&param[1], MYSQL_TYPE_LONG, &ost_id);
     _param_init_int (&param[2], MYSQL_TYPE_LONG, &stats_id);
     _param_init_int (&param[3], MYSQL_TYPE_LONG, &bin);
-    _param_init_int (&param[4], MYSQL_TYPE_LONGLONG, &read_count);
-    _param_init_int (&param[5], MYSQL_TYPE_LONGLONG, &write_count);
+    _param_init_int (&param[4], MYSQL_TYPE_LONGLONG, &read);
+    _param_init_int (&param[5], MYSQL_TYPE_LONGLONG, &write);
    
     if (mysql_stmt_bind_param (db->ins_brw_stats_data, param)) {
         if (lmt_conf_get_db_debug ())
@@ -1082,8 +1082,8 @@ done:
 }
 
 brw_bin_t *
-_get_last_brw(lmt_db_t db, char *ostname, uint64 ost_id, char *histname, 
-	      uint64 stats_id, uint64 bin, uint65 read_count, uint64 write_count)
+_get_last_brw(lmt_db_t db, char *ostname, uint64_t ost_id, char *histname, 
+	      uint64_t stats_id, uint64_t bin, uint64_t read_count, uint64_t write_count)
 {
     brw_ost_t *o;
     brw_stat_t *s;
@@ -1092,9 +1092,6 @@ _get_last_brw(lmt_db_t db, char *ostname, uint64 ost_id, char *histname,
     /* remember previous observations */
     static hash_t data_hash = NULL;
 
-    /* Initialize the value for the last seen timestamp id */
-    if( last == 0 )
-      last = db->timestamp_id;
     /* Create the data_hash if necessary */
     if ( data_hash == NULL )
       {
@@ -1104,36 +1101,38 @@ _get_last_brw(lmt_db_t db, char *ostname, uint64 ost_id, char *histname,
     /* See if we already have a structure for ostname */
     if( (o = hash_find (data_hash, ostname)) == NULL )
       {
-	o = create_brw_ost(ostname, ost_id);
+	o = _create_brw_ost(ostname, ost_id);
         if (!hash_insert (data_hash, o->ost, o)) {
 	  if (lmt_conf_get_db_debug ())
 	    err ("brw_ost hash insert error: %s %s", lmt_db_fsname (db), o->ost);
 	  _destroy_brw_ost (o);
+	  o = NULL;
 	  goto done;
         }
       }
     /* See if we already have a structure for histname */
     if( (s = hash_find (o->stat, histname)) == NULL )
       {
-	s = create_brw_stat(histname, stats_id);
+	s = _create_brw_stat(histname, stats_id);
         if (!hash_insert (o->stat, s->stat, s)) {
 	  if (lmt_conf_get_db_debug ())
 	    err ("brw_stat hash insert error: %s %s", lmt_db_fsname (db), s->stat);
-	  _destroy_brw_ost (s);
+	  _destroy_brw_stat (s);
+	  s = NULL;
 	  goto done;
         }
       }
     /* See if we already have a structure for bin */
     /* The bin arrives as an int. Create a string to go with */
     /* it as a key. */
-    sprintf( binname, MAX_BINNAME_LEN, "%d", bin);
+    snprintf( binname, MAX_BINNAME_LEN, "%d", bin);
     if( (b = hash_find (s->bin, binname)) == NULL )
       {
-	b = create_brw_bin(binname, bin, db->timestamp_id, read_count, write_count);
+	b = _create_brw_bin(binname, bin, db->timestamp_id, read_count, write_count);
         if (!hash_insert (s->bin, b->name, b)) {
             if (lmt_conf_get_db_debug ())
                 err ("brw_bin hash insert error: %s %s", lmt_db_fsname (db), binname);
-            _destroy_brw_ost (b);
+            _destroy_brw_bin (b);
 	    b = NULL;
             goto done;
         }
@@ -1189,6 +1188,9 @@ lmt_db_insert_brw_data (lmt_db_t db, char *ossname, char *ostname, char *histnam
   /* remember last ts_id value */
   static uint64_t last = 0;
 
+  /* Initialize the value for the last seen timestamp id */
+  if( last == 0 )
+    last = db->timestamp_id;
   /* Do not record zeros */
   if( (read_count == 0) && (write_count == 0) )
     {
@@ -1198,7 +1200,7 @@ lmt_db_insert_brw_data (lmt_db_t db, char *ossname, char *ostname, char *histnam
   assert (db->magic == LMT_DBHANDLE_MAGIC);
   if (!db->ins_brw_stats_data) {
     if (lmt_conf_get_db_debug ())
-      msg ("no permission to insert into %s OST_DATA",
+      msg ("no permission to insert into %s BRW_STATS_DATA",
 	   lmt_db_fsname (db));
     goto done;
   }
