@@ -1,0 +1,126 @@
+[2012-09-04]
+
+Here is a trascript of getting and installing the new LMT code to the
+Grace test system. Note that you need to do any autoconf calls on
+Compiler, since the OSS nodes do not have that environment. You do
+need to do configure on the OSS nodes (or on one of them) in order to
+have the build happen there. 
+
+Here's a hint about skipping the rsync business when getting the
+code to Compiler:
+------------------------------------------------------------------
+[uselton@compiler hopper]$ export GIT_SSL_NO_VERIFY=true; \
+		  git clone https://github.com/uselton/lmt.git lmt.git
+------------------------------------------------------------------
+
+mac 16:02 ~> cd ~/tmp
+mac 16:02 ~> rm -rf lmt.git
+mac 15:32 tmp> git clone https://github.com/uselton/lmt.git lmt.git
+[at home-----------------------------------------------------------]
+mac 18:46 repo> rsync -avz --exclude-from lmt.git/.rsync-ignore \
+    lmt.git/ sg.nersc.gov:lmt
+mac 18:55 repo> ssh sg.nersc.gov
+[uselton@sg1 ~]$ rsync -avz --exclude-from lmt/.rsync-ignore lmt/ \
+    compiler:grace/build/lmt
+[uselton@sg1 ~]$ ssh compiler
+[at work-----------------------------------------------------------]
+mac 15:41 tmp> rsync -avz --exclude-from lmt.git/.rsync-ignore \
+    lmt.git/ compiler:grace/build/lmt
+mac 15:50 tmp> ssh compiler
+[------------------------------------------------------------------]
+[uselton@compiler ~]$ cd grace/build/lmt
+[uselton@compiler lmt]$ ./autogen.sh
+[uselton@compiler lmt]$ cd ..
+[uselton@compiler build]$ rsync -avz --exclude-from \
+    lmt/.rsync-ignore lmt crayadm@flowmatic:/tmp/andrew w
+[uselton@compiler build]$ ssh crayadm@flowmatic
+crayadm@flowmatic:~> cd /tmp/andrew
+crayadm@flowmatic:/tmp/andrew> rsync -avz --exclude-from \
+    lmt/.rsync-ignore lmt root@gracems:/tmp/andrew
+crayadm@flowmatic:/tmp/andrew> goesms
+gracems:~ # cd /tmp/andrew
+gracems:/tmp/andrew # rsync -avz --exclude-from \
+    lmt/.rsync-ignore lmt root@oss1:/tmp/andrew
+gracems:/tmp/andrew # ssh oss1
+[root@lustre1-oss001 ~]# cd /tmp/andrew/lmt
+---if needed--->[root@lustre1-oss001 lmt]# mkdir ../log
+[root@lustre1-oss001 lmt]# ./configure --disable-mysql > ../log/lmt.config 2>&1
+[root@lustre1-oss001 lmt]# cat ../log/lmt.config | look-for-trouble
+[root@lustre1-oss001 lmt]# make > ../log/lmt.make 2>&1
+[root@lustre1-oss001 lmt]# cat ../log/lmt.make
+[root@lustre1-oss001 lmt]# cd ..
+[root@lustre1-oss001 andrew]# /etc/init.d/cerebrod stop
+Shutting down cerebrod:                                    [  OK  ]
+---if needed--->[root@lustre1-oss001 andrew]# mkdir bin
+                 and copy over the little scripts
+[root@lustre1-oss001 andrew]# bin/inst.sh
+[root@lustre1-oss001 andrew]# rsync -avz --exclude-from \
+    lmt/.rsync-ignore lmt root@lustre1-oss002:/tmp/andrew
+[root@lustre1-oss001 andrew]# ssh lustre1-oss002
+[root@lustre1-oss002 ~]# cd /tmp/andrew
+[root@lustre1-oss002 andrew]# bin/inst.sh
+[root@lustre1-oss002 andrew]# /etc/init.d/cerebrod start
+[root@lustre1-oss002 andrew]# exit
+[root@lustre1-oss001 andrew]# /etc/init.d/cerebrod start
+Starting cerebrod: MODULE DIR = /usr/lib64/cerebro         [  OK  ]
+[root@lustre1-oss001 andrew]# exit
+gracems:/tmp/andrew # exit
+crayadm@flowmatic:/tmp/andrew> exit
+
+And, of course, we need to do the same test on compiler itself...
+
+[uselton@compiler lmt]$ cd ~/grace/
+[uselton@compiler grace]$ cerebro/etc/init.d/cerebrod stop
+Shutting down cerebrod:                                    [  OK  ]
+[uselton@compiler grace]$ cd build/lmt
+[uselton@compiler lmt]$ GRACE=/home/uselton/grace
+[uselton@compiler lmt]$ PACKAGE=lmt
+[uselton@compiler lmt]$ SYSTEM=grace
+[uselton@compiler lmt]$ FS=scratch
+[uselton@compiler lmt]$ TOPDIR=$GRACE/cerebro
+[uselton@compiler lmt]$ BUILD=$GRACE/build
+----------------------------------------------------------------
+GRACE=/home/uselton/grace
+PACKAGE=lmt
+SYSTEM=grace
+FS=scratch
+TOPDIR=$GRACE/cerebro
+BUILD=$GRACE/build
+----------------------------------------------------------------
+[uselton@compiler lmt]$ ./autogen.sh
+[uselton@compiler lmt]$ ./configure --prefix=$TOPDIR \
+    --sysconfdir=$GRACE/etc --localstatedir=$GRACE/var \
+    --with-cerebro-module-dir=$TOPDIR/lib/cerebro --with-lmt \
+    --with-lmt-mon > $GRACE/log/lmt.config 2>&1
+[uselton@compiler lmt]$ cat $GRACE/log/lmt.config | look-for-trouble
+[uselton@compiler lmt]$ make  > $GRACE/log/lmt.make 2>&1
+[uselton@compiler lmt]$ cat $GRACE/log/lmt.make
+[uselton@compiler lmt]$ make install > $GRACE/log/lmt.install 2>&1
+[uselton@compiler lmt]$ cd ../..
+[uselton@compiler grace]$ cp etc/lmt/lmt.conf.grace etc/lmt/lmt.conf
+[uselton@compiler grace]$ cerebro/etc/init.d/cerebrod start
+Starting cerebrod:                                         [  OK  ]
+
+and then run this to test that the code is working. In fact you can do
+it before and after to make sure you see any change in behavior.
+
+mac 14:52 lmt.git> ssh euclid
+euclid 15:05 ~> /project/projectdirs/pma/lmt/pylmt/bulk.py -c \
+    ~/.lmtrc.grace -f filesystem_scratch 
+euclid 15:06 ~> /project/projectdirs/pma/lmt/pylmt/brwost.py -c \
+    ~/.lmtrc.grace -f filesystem_scratch -o scratch-OST0000 -s \
+    BRW_RPC -B 256
+
+You can check on the contents of the DB directly as well:
+
+mac 10:06 python> ssh compiler
+[uselton@compiler grace]$ mysql -u graceclient -h 127.0.0.1 -P 3350 filesystem_scratch
+
+And run a test to probe the I/O path:
+
+mac 08:37 pyLMT> ssh grace
+uselton@grace01:~> cd work/nersc8/ior_tests
+uselton@grace01:~/work/nersc8/ior_tests> module load pbs
+uselton@grace01:~/work/nersc8/ior_tests> qsub repeatability.pbs
+171.grace01
+uselton@grace01:~/work/nersc8/ior_tests> watch -n 10 qstat 171

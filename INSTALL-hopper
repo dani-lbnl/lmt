@@ -1,0 +1,101 @@
+[2012-09-04]
+
+Here is a trascript of getting and installing the new LMT code to the
+Hopper HPC system. Note that you need to do any autoconf calls on
+Compiler, since the OSS nodes do not have that environment. You do
+need to do configure on the OSS nodes (or on one of them) in order to
+have the build happen there. 
+
+Note also that the OSS build actually can take place on Grace and be
+copied into place on Hopper. Engage with system staff for that.
+
+Here's a hint about skipping the rsync business when getting the
+code to Compiler:
+------------------------------------------------------------------
+[uselton@compiler hopper]$ export GIT_SSL_NO_VERIFY=true; \
+		  git clone https://github.com/uselton/lmt.git lmt.git
+------------------------------------------------------------------
+
+mac 16:02 ~> cd ~/tmp
+mac 16:02 ~> rm -rf lmt.git
+mac 15:32 tmp> git clone https://github.com/uselton/lmt.git lmt.git
+[at home-----------------------------------------------------------]
+mac 18:46 repo> rsync -avz --exclude-from lmt.git/.rsync-ignore \
+    lmt.git/ sg.nersc.gov:lmt
+mac 18:55 repo> ssh sg.nersc.gov
+[uselton@sg1 ~]$ rsync -avz --exclude-from lmt/.rsync-ignore lmt/ \
+    compiler:hopper/build/lmt
+[uselton@sg1 ~]$ ssh compiler
+[at work-----------------------------------------------------------]
+mac 15:41 tmp> rsync -avz --exclude-from lmt.git/.rsync-ignore \
+    lmt.git/ compiler:grace/build/lmt
+mac 15:50 tmp> ssh compiler
+[------------------------------------------------------------------]
+[uselton@compiler ~]$ cd hopper/build/lmt
+[uselton@compiler lmt]$ ./autogen.sh
+[uselton@compiler lmt]$ cd ..
+
+Refer to INSTALL-grace for details about build for the OSS
+
+No for the Compiler part of the build...
+
+[uselton@compiler lmt]$ cd ~/hopper/
+[uselton@compiler hopper]$ cd build/lmt
+[uselton@compiler lmt]$ HOPPER=/home/uselton/hopper
+[uselton@compiler lmt]$ PACKAGE=lmt
+[uselton@compiler lmt]$ SYSTEM=hopper
+[uselton@compiler lmt]$ FS=scratch
+[uselton@compiler lmt]$ TOPDIR=$HOPPER/cerebro
+[uselton@compiler lmt]$ BUILD=$HOPPER/build
+----------------------------------------------------------------
+HOPPER=/home/uselton/hopper
+PACKAGE=lmt
+SYSTEM=hopper
+FS=scratch
+TOPDIR=$HOPPER/cerebro
+BUILD=$HOPPER/build
+----------------------------------------------------------------
+[uselton@compiler lmt]$ ./autogen.sh
+[uselton@compiler lmt]$ ./configure --prefix=/usr \
+    --with-lmt --with-lmt-mon > $HOPPER/log/lmt.config 2>&1
+[uselton@compiler lmt]$ cat $HOPPER/log/lmt.config | look-for-trouble
+[uselton@compiler lmt.git]$ make rpm \
+		  > $HOPPER/log/lmt.make.rpm 2>&1
+[uselton@compiler lmt]$ cat $HOPPER/log/lmt.make.rpm
+[uselton@compiler lmt]$ sudo sudosh
+[root@compiler ~]# /etc/init.d/cerebrod stop
+Shutting down cerebrod:                                    [  OK  ]
+[root@compiler ~]# rpm -e lmt-server
+[root@compiler ~]# rpm -ivh /home/uselton/redhat/RPMS/x86_64/lmt-server-3.1.5a-1.x86_64.rpm 
+Preparing...                ########################################### [100%]
+   1:lmt-server             ########################################### [100%]
+[root@compiler ~]# cd ~uselton/hopper/build/lmt
+[ If you need to update the schema ...]
+  [root@compiler lmt]$ cp scripts/create_schema-1.2.sql /usr/share/lmt/
+  [root@compiler lmt]# lmtinit -a scratch
+  [root@compiler lmt]# lmtinit -a scratch2
+[root@compiler lmt]# /etc/init.d/cerebrod start
+Starting cerebrod:                                         [  OK  ]
+[uselton@compiler hopper]# exit
+
+and then run this to test that the code is working. In fact you can do
+it before and after to make sure you see any change in behavior.
+
+mac 14:52 lmt.git> ssh euclid
+euclid 15:05 ~> $LMT/pylmt/bulk.py -f filesystem_scratch 
+euclid 15:06 ~> /project/projectdirs/pma/lmt/pylmt/brwost.py \
+    -f filesystem_scratch -o scratch-OST0000 -s BRW_RPC -B 256
+
+You can check on the contents of the DB directly as well:
+
+mac 10:06 python> ssh compiler
+[uselton@compiler grace]$ mysql -u lwatchadmin -p --protocol=TCP \
+		  -h compiler filesystem_scratch
+
+And run a test to probe the I/O path:
+
+mac 08:37 pyLMT> ssh hopper.nersc.gov
+hopper 15:40 ~> cd work/nersc8/ior_tests
+hopper 15:40 ior_tests>  qsub repeatability.pbs
+2337999.sdb
+hopper 15:41 ior_tests> watch -n 10 qstat 2337999
