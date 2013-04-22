@@ -1,0 +1,20 @@
+2012-03-26 Andrew Uselton <acuselton@lbl.gov>
+
+	* : Passing wrong exception parameter to handlerError() in LMTConfig
+
+	* : The recursive-include tests line in MANIFEST.in was not hyphenated.
+
+2012-10-14 Andrew Uselton <acuselton@lbl.gov>
+
+	* : Update to v 0.1.1
+
+	* : Update Series.py to interpolate a little better
+
+2012-11-22 Andrew Uselton <acuselton@lbl.gov>
+
+	* : Update to v 0.2.0
+
+	* : Implement HDF5 file format for preserved data
+
+	
+

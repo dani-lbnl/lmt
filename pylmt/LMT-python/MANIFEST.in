@@ -1,0 +1,3 @@
+recursive-include pyLMT *.py
+recursive-include tests *.py
+include MANIFEST.in

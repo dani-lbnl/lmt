@@ -1,0 +1,25 @@
+LoadModule wsgi_module modules/mod_wsgi.so
+
+RewriteEngine  on
+#RewriteRule    ^/newt$ /newt/  [R]
+
+WSGISocketPrefix /var/tmp
+
+WSGIRestrictStdout Off
+WSGIDaemonProcess pylmt processes=8 threads=1 python-eggs=/var/tmp
+
+WSGIProcessGroup pylmt
+WSGIScriptAlias /pylmt /project/projectdirs/pma/PYLMT/web/pylmt.wsgi
+
+#WSGIPassAuthorization On
+
+<Directory /project/projectdirs/pma/PYLMT/web>
+
+    WSGIProcessGroup pylmt
+    WSGIApplicationGroup %{GLOBAL}
+    Order allow,deny
+    Allow from all
+
+</Directory>
+
+

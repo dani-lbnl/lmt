@@ -1,0 +1,57 @@
+==================
+pyLMT Installation
+==================
+
+.. contents::
+..
+
+Prerequisites
+-------------
+
++ Python 2.7.x
+
+  * http://www.python.org/
+
+  * Only tests with the 2.7.x series
+
++ setuptools
+
+  * http://pypi.python.org/pypi/setuptools
+
++ MySQLdb 1.2.3
+
+  * http://sourceforge.net/projects/mysql-python
+
++ NumPy 1.5.1 or higher
+
+  * http://numpy.scipy.org
+
++ matplotlib 1.0.1
+
+  * http://matplotlib.sourceforge.net
+
+Building and installing
+-----------------------
+
+The setup.py script will invoke easy_install to get any of the
+prerequisites that are not already installed, with the exception of
+Python itself.
+
+See the site.cfg and LMTConfig.py for details about telling pyLMT how
+to find the LMT databases that are available.
+
+  $ tar xvfz LMT-python-0.2.0.tar.gz
+  $ cd LMT-python-0.2.0
+  $ # edit site.cfg if necessary
+  $ python setup.py build
+  $ sudo python setup.py install # or su first
+
+License
+-------
+
+GPL
+
+
+:Author: Andrew Uselton <acuselton@lbl.gov>
+
+

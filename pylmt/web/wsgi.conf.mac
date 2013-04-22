@@ -1,0 +1,42 @@
+LoadModule wsgi_module libexec/apache2/mod_wsgi.so
+
+RewriteEngine  on
+#RewriteRule    ^/newt$ /newt/  [R]
+
+WSGISocketPrefix /private/var/log/apache2
+
+#WSGIRestrictStdout Off
+
+#WSGIPassAuthorization Off
+
+<VirtualHost 127.0.0.1:80>
+    ServerName www.lmt.net
+    ServerAlias lmt.net
+    ServerAdmin acuselton@lbl.gov
+
+    DocumentRoot "/Library/WebServer/LMT"
+
+    ErrorLog "/private/var/log/apache2/lmt/error_log"
+    CustomLog "/private/var/log/apache2/lmt/access_log" common
+
+    <Directory "/Library/WebServer/LMT">
+        Options Indexes FollowSymLinks MultiViews
+
+	AllowOverride None
+
+    	Order allow,deny
+    	Allow from all
+
+    </Directory>
+
+    WSGIDaemonProcess pylmt processes=8 threads=1 display-name=%{GROUP} python-eggs=/Library/WebServer/tmp
+    WSGIScriptAlias / /Library/WebServer/wsgi-scripts/pylmt.wsgi
+
+    <Directory /Library/WebServer/wsgi-scripts>
+        WSGIProcessGroup pylmt
+        WSGIApplicationGroup %{GLOBAL}
+        Order allow,deny
+        Allow from all
+    </Directory>
+
+</VirtualHost>
