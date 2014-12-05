@@ -37,7 +37,7 @@
 #   values everywhere for the first observation, corresponding to 00:00:00.
 #   That assumes that it exists as the last values from the previous day's
 #   file.
-# - second, query and install values for timesteps, OSS CPU utilizaiton,
+# - second, query and install values for timesteps, OSS CPU utilization,
 #   missing observations, and mds data, and mds cpu. This might be done for
 #   a sub-interval of the day or it might be for all of it.
 # - third, load data for the designated interval for the bulk OST read and
