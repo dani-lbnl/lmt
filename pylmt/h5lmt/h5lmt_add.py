@@ -48,7 +48,7 @@ def process_args(main=False):
     The command line arguments needed for operating the OST class as
     a simple script.
     On success return the args object with validatated entries for
-    those thing required by the __man__ script.
+    those things required by the __man__ script.
     """
     # make new arguments for: args.osts, .osss, .mds, .iosize
     parser = argparse.ArgumentParser(description='Access an LMT DB')
@@ -73,7 +73,7 @@ def validate_args(args):
     try:
         fsFile = h5py.File(args.file, 'r+')
     except:
-        print "%s does not appear to exist. Do yo need to use h5lmt_init.py?"
+        print "%s does not appear to exist. Do you need to use h5lmt_init.py?"
         return(None)
     fsStepsGroup = fsFile["FSStepsGroup"]
     fsStepsDataSet = fsStepsGroup["FSStepsDataSet"]
@@ -93,7 +93,7 @@ def validate_args(args):
 # callable main function for working interactively
 def doMain(args):
     """
-    It looks like it is possible to get an incomplet coverage of the set of time
+    It looks like it is possible to get an incomplete coverage of the set of time
     steps if you only get rate and brw_stats data for one OST. I should fix this
     in the base modules.
     """
